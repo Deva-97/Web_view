@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 class WebView extends StatefulWidget {
   const WebView({Key? key}) : super(key: key);
@@ -8,7 +9,6 @@ class WebView extends StatefulWidget {
   @override
   State<WebView> createState() => _WebViewState();
 }
-
 class _WebViewState extends State<WebView> {
   late final WebViewController _controller;
 
@@ -16,23 +16,59 @@ class _WebViewState extends State<WebView> {
   void initState() {
     super.initState();
     late final PlatformWebViewControllerCreationParams params;
-
-    params = const PlatformWebViewControllerCreationParams();
+    if (WebViewPlatform.instance is WebKitWebViewPlatform) {
+      params = WebKitWebViewControllerCreationParams(
+        allowsInlineMediaPlayback: true,
+        mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
+      );
+    } else {
+      params = const PlatformWebViewControllerCreationParams();
+    }
 
     final WebViewController controller =
     WebViewController.fromPlatformCreationParams(params);
 
     controller
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0x00000000))
       ..setNavigationDelegate(
         NavigationDelegate(
-            onProgress: (int progress){},
-            onPageStarted: (String url) {},
-        onPageFinished: (String url) {},
-        onWebResourceError: (WebResourceError error) {},
-      ),
-    )
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+          onProgress: (int progress) {
+            debugPrint('WebView is loading (progress : $progress%)');
+          },
+          onPageStarted: (String url) {
+            debugPrint('Page started loading: $url');
+          },
+          onPageFinished: (String url) {
+            debugPrint('Page finished loading: $url');
+          },
+          onWebResourceError: (WebResourceError error) {
+            debugPrint('''
+Page resource error:
+  code: ${error.errorCode}
+  description: ${error.description}
+  errorType: ${error.errorType}
+  isForMainFrame: ${error.isForMainFrame}
+          ''');
+          },
+          onNavigationRequest: (NavigationRequest request) {
+            if (request.url.startsWith('https://www.onwords.in/')) {
+              debugPrint('blocking navigation to ${request.url}');
+              return NavigationDecision.prevent;
+            }
+            debugPrint('allowing navigation to ${request.url}');
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..addJavaScriptChannel(
+        'Toaster',
+        onMessageReceived: (JavaScriptMessage message) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message.message)),
+          );
+        },
+      )
       ..loadRequest(Uri.parse('https://www.onwords.in/'));
 
     if (controller.platform is AndroidWebViewController) {
@@ -40,6 +76,7 @@ class _WebViewState extends State<WebView> {
       (controller.platform as AndroidWebViewController)
           .setMediaPlaybackRequiresUserGesture(false);
     }
+
     _controller = controller;
   }
   @override
@@ -56,7 +93,8 @@ class _WebViewState extends State<WebView> {
           ),
         ),
       ),
-      body: WebViewWidget(controller: _controller),
+      body: WebViewWidget(
+          controller: _controller),
     );
   }
 }
